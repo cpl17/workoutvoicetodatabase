@@ -1,0 +1,301 @@
+# Phase 0 Checklist — Foundation
+
+Work through these in order. Each step is one bite-sized session. Check boxes as you go.
+Ask questions anytime — that's the point.
+
+**Goal of Phase 0:** replace "does a `.txt` file exist?" as state tracking with an explicit SQLite manifest, a single pipeline entry point, and local Whisper transcription.
+
+**You already have:** 4 memos in `voice-memos/`, 4 OpenAI transcripts in `transcripts/`.
+
+---
+
+## Phase 0a — Manifest, config, pipeline shell
+
+### Step 0a.1 — Understand what we're fixing
+
+- [ ] Read [`export_voice_memos.py`](../export_voice_memos.py) and note what it outputs (filename format, skip-if-exists logic)
+- [ ] Read [`transcribe_voice_memos.py`](../transcribe_voice_memos.py) and note how it decides what's "pending" (transcript file missing)
+- [ ] List your 4 memos: `ls voice-memos/` and `ls transcripts/`
+
+**Why:** today each script tracks state independently. The manifest becomes the single source of truth.
+
+**Question to consider:** what happens if you rename a file, re-export with `--force`, or transcribe twice?
+
+---
+
+### Step 0a.2 — Add project config
+
+- [ ] Create [`config.yaml`](../config.yaml) with paths and placeholders (transcription/parsing sections can be stubs for now)
+- [ ] Add `pyyaml` to [`requirements.txt`](../requirements.txt) and install: `pip install pyyaml`
+- [ ] Create `lib/` package: `lib/__init__.py` + `lib/config.py` that loads and validates config
+
+**Verify:**
+```bash
+python -c "from lib.config import load_config; print(load_config())"
+```
+
+**Learn:** why externalize paths/settings instead of hardcoding `Path("voice-memos")` everywhere?
+
+---
+
+### Step 0a.3 — Design the manifest schema
+
+- [ ] Create [`lib/manifest.py`](../lib/manifest.py) with a `Manifest` class
+- [ ] Implement `init_db()` — create SQLite at `data/manifest.db`
+- [ ] Implement `memos` table (start with core columns only):
+
+| Column | Purpose |
+|--------|---------|
+| `id` | UUID primary key |
+| `apple_recording_path` | `ZPATH` from Apple DB (stable id) |
+| `recorded_at` | ISO timestamp |
+| `title` | memo title |
+| `audio_path` | relative path, e.g. `voice-memos/foo.m4a` |
+| `transcript_path` | nullable |
+| `export_status` | `pending` / `done` / `failed` |
+| `transcribe_status` | `pending` / `done` / `failed` / `skipped` |
+| `created_at`, `updated_at` | audit |
+
+- [ ] Add helper methods: `upsert_memo(...)`, `get_memo_by_apple_path(...)`, `list_memos(...)`, `update_status(...)`
+
+**Verify:**
+```bash
+python -c "from lib.manifest import Manifest; m = Manifest('data/manifest.db'); m.init_db(); print('ok')"
+```
+
+**Learn:** why SQLite over a JSON file for concurrent updates and queries?
+
+---
+
+### Step 0a.4 — Backfill manifest from existing files
+
+- [ ] Create [`backfill_manifest.py`](../backfill_manifest.py) (one-time migration script)
+- [ ] Scan `voice-memos/*.m4a` — for each file, parse timestamp + title from filename
+- [ ] Insert a manifest row with `export_status=done`, `transcribe_status=pending`
+- [ ] If matching `transcripts/{stem}.txt` exists, set `transcript_path` and `transcribe_status=done`
+
+**Verify:**
+```bash
+python backfill_manifest.py
+python -c "from lib.manifest import Manifest; m=Manifest('data/manifest.db'); print(len(m.list_memos()))"
+# expect: 4
+```
+
+**Learn:** backfill gives you a manifest without re-exporting. New memos will enter via export wiring (next step).
+
+---
+
+### Step 0a.5 — Wire export → manifest
+
+- [ ] Update [`export_voice_memos.py`](../export_voice_memos.py) `list_from_library()` to also return `ZPATH` as `apple_recording_path`
+- [ ] After a successful copy in `export_from_library()`, call `manifest.upsert_memo(...)` with `export_status=done`
+- [ ] On skip (file already exists), still ensure manifest row exists (upsert from filename metadata)
+- [ ] Add optional `--no-manifest` flag to export for debugging without DB writes
+
+**Verify:**
+```bash
+python export_voice_memos.py --dry-run   # if you add dry-run, or just:
+python export_voice_memos.py             # should print skip for all 4, manifest still has 4 rows
+```
+
+**Learn:** `ZPATH` is the stable key — filename can drift, Apple path shouldn't.
+
+---
+
+### Step 0a.6 — Wire transcribe → manifest
+
+- [ ] Update [`transcribe_voice_memos.py`](../transcribe_voice_memos.py) to query manifest for `transcribe_status=pending` instead of scanning for missing `.txt`
+- [ ] After transcribing, update manifest: `transcript_path`, `transcribe_status=done`
+- [ ] On failure, set `transcribe_status=failed` + `error_message`
+
+**Verify:**
+```bash
+python transcribe_voice_memos.py --dry-run   # expect: 0 pending (all 4 already have transcripts)
+```
+
+**Learn:** manifest-driven pending list survives even if transcript files are deleted (you can detect inconsistency).
+
+---
+
+### Step 0a.7 — Create `run_pipeline.py`
+
+- [ ] Create [`run_pipeline.py`](../run_pipeline.py) orchestrator
+- [ ] Accept `--stage export|transcribe|all`, `--dry-run`, `--force`
+- [ ] Load config, init manifest, call export then transcribe stages
+- [ ] Print human-readable summary to stderr
+- [ ] Print **JSON summary** as last line of stdout (for future Hermes):
+
+```json
+{"status":"ok","exported":0,"transcribed":0,"errors":[]}
+```
+
+**Verify:**
+```bash
+python run_pipeline.py --stage all --dry-run
+python run_pipeline.py --stage all
+```
+
+**Phase 0a done when:**
+- [ ] `data/manifest.db` exists with 4 memos, all `export_status=done`
+- [ ] `python run_pipeline.py --stage all` runs cleanly (0 new work)
+- [ ] You can explain what each table column means
+
+---
+
+## Phase 0b — Local Whisper + comparison
+
+### Step 0b.1 — Understand the transcription swap
+
+- [ ] Read current [`transcribe.py`](../transcribe.py) — note it calls OpenAI `whisper-1` API
+- [ ] Read OpenAI transcripts in `transcripts/` — these become your **baseline** for comparison
+
+**Why:** Phase 0b replaces cloud transcription with local `faster-whisper`. OpenAI transcripts stay on disk as reference (don't delete yet).
+
+**Question to consider:** local Whisper sends no audio to the cloud, but parsing (Phase 1) still will. Cool with that split?
+
+---
+
+### Step 0b.2 — Install faster-whisper
+
+- [ ] Add `faster-whisper` to [`requirements.txt`](../requirements.txt)
+- [ ] Install: `pip install faster-whisper`
+- [ ] First run downloads the `small` model (~500MB) — expect a wait
+
+**Verify:**
+```bash
+python -c "from faster_whisper import WhisperModel; print('import ok')"
+```
+
+**Learn:** `small` is fast but less accurate; you'll upgrade later. Model name goes in config + manifest.
+
+---
+
+### Step 0b.3 — Create Whisper backend abstraction
+
+- [ ] Create `lib/whisper/__init__.py` and [`lib/whisper/backends.py`](../lib/whisper/backends.py)
+- [ ] Define a simple interface:
+
+```python
+def transcribe(audio_path: Path, *, language: str | None = None) -> str: ...
+```
+
+- [ ] Implement `FasterWhisperBackend` — loads model from `config.yaml` once, reuses across files
+- [ ] Implement `OpenAIBackend` — wrap existing OpenAI logic (keep for comparison)
+
+**Verify:**
+```bash
+python -c "
+from pathlib import Path
+from lib.whisper.backends import FasterWhisperBackend
+b = FasterWhisperBackend(model='small', language='en')
+print(b.transcribe(Path('voice-memos/2026-05-28 18.25.25 New Recording.m4a')))
+"
+```
+
+**Learn:** backend abstraction lets you A/B test without changing `transcribe_voice_memos.py` logic.
+
+---
+
+### Step 0b.4 — Update config for transcription backend
+
+- [ ] Fill in `config.yaml` transcription section:
+
+```yaml
+transcription:
+  backend: faster_whisper   # faster_whisper | openai
+  model: small
+  language: en
+```
+
+- [ ] Update [`transcribe.py`](../transcribe.py) to delegate to configured backend
+- [ ] Store `transcribe_backend` + `transcribe_model` on manifest row when transcribing
+
+**Verify:**
+```bash
+python transcribe.py "voice-memos/2026-05-28 18.25.25 New Recording.m4a"
+```
+
+---
+
+### Step 0b.5 — Side-by-side comparison setup
+
+- [ ] Create `transcripts-openai/` — copy current OpenAI transcripts there as baseline:
+
+```bash
+mkdir -p transcripts-openai
+cp transcripts/*.txt transcripts-openai/
+```
+
+- [ ] Add `transcripts-openai/` to [`.gitignore`](../.gitignore) (optional, or keep as reference)
+- [ ] Create [`compare_transcripts.py`](../compare_transcripts.py) — for each memo, print OpenAI vs local Whisper side by side
+
+**Verify:**
+```bash
+python compare_transcripts.py
+```
+
+**Learn:** don't assume local is better on every memo — compare on your real gym audio.
+
+---
+
+### Step 0b.6 — Re-transcribe all with local Whisper
+
+- [ ] Reset manifest transcribe status (or use `--force`):
+
+```bash
+python transcribe_voice_memos.py --force
+# or: python run_pipeline.py --stage transcribe --force
+```
+
+- [ ] Confirm manifest rows show `transcribe_backend=faster_whisper`, `transcribe_model=small`
+- [ ] Run `compare_transcripts.py` and review all 4 memos
+- [ ] Pay special attention to [`2026-05-28 15.13.15 Save A Lot`](../transcripts/2026-05-28%2015.13.15%20Save%20A%20Lot.txt) — the hard one
+
+**Questions to answer after comparing:**
+- [ ] Is local Whisper good enough for Phase 1 parsing?
+- [ ] Do you want to try `small.en` or `medium` before moving on?
+- [ ] Any memos where OpenAI was clearly better?
+
+---
+
+### Step 0b.7 — Clean up and document decisions
+
+- [ ] Update [`.gitignore`](../.gitignore) to include `data/`
+- [ ] Add `transcribe_backend` / `transcribe_model` columns to manifest if not already there
+- [ ] Write 2–3 sentences in a comment or note: which backend you chose and why
+
+**Phase 0b done when:**
+- [ ] All 4 memos transcribed locally via faster-whisper
+- [ ] You've compared against OpenAI baseline and made a conscious model choice
+- [ ] `python run_pipeline.py --stage all` uses local Whisper by default
+- [ ] Manifest records which backend transcribed each memo
+
+---
+
+## Quick reference — files created/modified
+
+| File | Phase | Action |
+|------|-------|--------|
+| `config.yaml` | 0a | Create |
+| `lib/config.py` | 0a | Create |
+| `lib/manifest.py` | 0a | Create |
+| `backfill_manifest.py` | 0a | Create |
+| `run_pipeline.py` | 0a | Create |
+| `export_voice_memos.py` | 0a | Modify |
+| `transcribe_voice_memos.py` | 0a | Modify |
+| `lib/whisper/backends.py` | 0b | Create |
+| `transcribe.py` | 0b | Modify |
+| `compare_transcripts.py` | 0b | Create |
+| `requirements.txt` | 0a/0b | Modify |
+| `.gitignore` | 0b | Modify |
+
+---
+
+## How we'll work
+
+1. Pick the next unchecked step.
+2. You ask questions — we implement or you implement with guidance.
+3. Run the **Verify** commands together.
+4. Check the box and move on.
+
+**Ready to start?** Say "let's do 0a.1" (or jump to whichever step you want).
