@@ -10,3 +10,4 @@ data/
 voice-memos/
 transcripts/
 transcripts-openai/
+backfill_manifest.py

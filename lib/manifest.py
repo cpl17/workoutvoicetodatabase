@@ -83,11 +83,13 @@ class MemoRecord:
     transcript_path: str | None
     export_status: str
     transcribe_status: str
+    error_message: str | None
     created_at: str
     updated_at: str
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> MemoRecord:
+        keys = row.keys()
         return cls(
             id=row["id"],
             apple_recording_path=row["apple_recording_path"],
@@ -97,6 +99,7 @@ class MemoRecord:
             transcript_path=row["transcript_path"],
             export_status=row["export_status"],
             transcribe_status=row["transcribe_status"],
+            error_message=row["error_message"] if "error_message" in keys else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -128,6 +131,9 @@ class Manifest:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(MEMOS_SCHEMA)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(memos)")}
+            if "error_message" not in columns:
+                conn.execute("ALTER TABLE memos ADD COLUMN error_message TEXT")
             conn.commit()
 
     def upsert_memo(
@@ -263,6 +269,8 @@ class Manifest:
         transcribe_status: str | None = None,
         audio_path: Path | str | None = None,
         transcript_path: Path | str | None = None,
+        error_message: str | None = None,
+        clear_error: bool = False,
     ) -> MemoRecord | None:
         """Update pipeline status and/or paths for a memo by id."""
         if (
@@ -270,6 +278,8 @@ class Manifest:
             and transcribe_status is None
             and audio_path is None
             and transcript_path is None
+            and error_message is None
+            and not clear_error
         ):
             raise ValueError("update_status requires at least one field to change")
 
@@ -288,6 +298,12 @@ class Manifest:
         if transcript_path is not None:
             fields.append("transcript_path = ?")
             params.append(_storage_path(transcript_path))
+        if error_message is not None:
+            fields.append("error_message = ?")
+            params.append(error_message)
+        elif clear_error:
+            fields.append("error_message = ?")
+            params.append(None)
 
         fields.append("updated_at = ?")
         params.append(_utc_now_iso())
