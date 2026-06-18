@@ -7,15 +7,18 @@ Ask questions anytime — that's the point.
 
 **You already have:** 4 memos in `voice-memos/`, 4 OpenAI transcripts in `transcripts/`.
 
+**Export:** [`export_voice_memos.py`](../export_voice_memos.py) is **library-only** — it reads Apple's `CloudRecordings.db` and copies synced `.m4a` files. Requires Full Disk Access for Terminal/Cursor. (UI/AppleScript export was removed.)
+
 ---
 
 ## Phase 0a — Manifest, config, pipeline shell
 
 ### Step 0a.1 — Understand what we're fixing
 
-- [ ] Read [`export_voice_memos.py`](../export_voice_memos.py) and note what it outputs (filename format, skip-if-exists logic)
+- [ ] Read [`export_voice_memos.py`](../export_voice_memos.py) — library export from `CloudRecordings.db`, filename format, skip-if-exists logic, `apple_recording_path` (ZPATH)
 - [ ] Read [`transcribe_voice_memos.py`](../transcribe_voice_memos.py) and note how it decides what's "pending" (transcript file missing)
 - [ ] List your 4 memos: `ls voice-memos/` and `ls transcripts/`
+- [ ] Try listing memos from Apple's DB: `python export_voice_memos.py --list`
 
 **Why:** today each script tracks state independently. The manifest becomes the single source of truth.
 
@@ -87,18 +90,17 @@ python -c "from lib.manifest import Manifest; m=Manifest('data/manifest.db'); pr
 
 ### Step 0a.5 — Wire export → manifest
 
-- [ ] Update [`export_voice_memos.py`](../export_voice_memos.py) `list_from_library()` to also return `ZPATH` as `apple_recording_path`
-- [ ] After a successful copy in `export_from_library()`, call `manifest.upsert_memo(...)` with `export_status=done`
-- [ ] On skip (file already exists), still ensure manifest row exists (upsert from filename metadata)
+- [ ] After a successful copy in `export_from_library()`, call `manifest.upsert_memo(...)` with `export_status=done` and `apple_recording_path` from `list_from_library()`
+- [ ] On skip (file already exists), still ensure manifest row exists (upsert from DB metadata)
 - [ ] Add optional `--no-manifest` flag to export for debugging without DB writes
 
 **Verify:**
 ```bash
-python export_voice_memos.py --dry-run   # if you add dry-run, or just:
+python export_voice_memos.py --list
 python export_voice_memos.py             # should print skip for all 4, manifest still has 4 rows
 ```
 
-**Learn:** `ZPATH` is the stable key — filename can drift, Apple path shouldn't.
+**Learn:** `ZPATH` (`apple_recording_path`) is the stable key — filename can drift, Apple path shouldn't.
 
 ---
 
@@ -281,7 +283,7 @@ python transcribe_voice_memos.py --force
 | `lib/manifest.py` | 0a | Create |
 | `backfill_manifest.py` | 0a | Create |
 | `run_pipeline.py` | 0a | Create |
-| `export_voice_memos.py` | 0a | Modify |
+| `export_voice_memos.py` | 0a | Modify (wire manifest; library-only) |
 | `transcribe_voice_memos.py` | 0a | Modify |
 | `lib/whisper/backends.py` | 0b | Create |
 | `transcribe.py` | 0b | Modify |
