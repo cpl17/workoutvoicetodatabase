@@ -331,16 +331,18 @@ python transcribe_voice_memos.py --force
 
 ### Step 0b.7 — Clean up and document decisions
 
-- [ ] Update `[.gitignore](../.gitignore)` to include `data/`
-- [ ] Add `transcribe_backend` / `transcribe_model` columns to manifest if not already there
-- [ ] Write 2–3 sentences in a comment or note: which backend you chose and why
+- [x] Update `[.gitignore](../.gitignore)` to include `data/`
+- [x] Add `transcribe_backend` / `transcribe_model` columns to manifest if not already there
+- [x] Write 2–3 sentences in a comment or note: which backend you chose and why
+
+**Answer:** `data/` was already gitignored. Manifest columns added in 0b.4. Decision documented in `config.yaml` comments: `faster_whisper`/`small` for local, private transcription; OpenAI kept as config switch for comparison.
 
 **Phase 0b done when:**
 
-- [ ] All 4 memos transcribed locally via faster-whisper
-- [ ] You've compared against OpenAI baseline and made a conscious model choice
-- [ ] `python run_pipeline.py --stage all` uses local Whisper by default
-- [ ] Manifest records which backend transcribed each memo
+- [x] All memos transcribed locally via faster-whisper
+- [x] You've compared against OpenAI baseline and made a conscious model choice
+- [x] `python run_pipeline.py --stage all` uses local Whisper by default
+- [x] Manifest records which backend transcribed each memo
 
 ---
 

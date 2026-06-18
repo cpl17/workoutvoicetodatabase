@@ -6,6 +6,9 @@ paths:
   transcripts: transcripts
   data: data
 
+# Transcription backend (Phase 0b): faster_whisper/small keeps audio on-device and
+# matched OpenAI on gym memos in side-by-side testing. OpenAI remains available
+# via backend: openai — switch in config to retry edge cases (e.g. rep-count memos).
 transcription:
   backend: faster_whisper   # faster_whisper | openai
   model: small              # openai: whisper-1 | faster_whisper: small, medium, etc.
