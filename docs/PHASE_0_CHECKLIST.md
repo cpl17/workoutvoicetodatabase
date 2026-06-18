@@ -132,27 +132,32 @@ python -c "from lib.manifest import Manifest; m=Manifest.from_config(); print(le
 
 ### Step 0a.6 — Wire transcribe → manifest
 
-- [ ] Update `[transcribe_voice_memos.py](../transcribe_voice_memos.py)` to query manifest for `transcribe_status=pending` instead of scanning for missing `.txt`
-- [ ] After transcribing, update manifest: `transcript_path`, `transcribe_status=done`
-- [ ] On failure, set `transcribe_status=failed` + `error_message`
+- [x] Update `[transcribe_voice_memos.py](../transcribe_voice_memos.py)` to query manifest for `transcribe_status=pending` instead of scanning for missing `.txt`
+- [x] After transcribing, update manifest: `transcript_path`, `transcribe_status=done`
+- [x] On failure, set `transcribe_status=failed` + `error_message`
 
 **Verify:**
 
 ```bash
-python transcribe_voice_memos.py --dry-run   # expect: 0 pending (all 4 already have transcripts)
+python export_voice_memos.py               # new memo → manifest row with transcribe_status=pending
+python transcribe_voice_memos.py --dry-run   # lists pending memos only (not all missing .txt)
+python transcribe_voice_memos.py             # writes transcript; sets transcribe_status=done
+python transcribe_voice_memos.py --dry-run   # expect: 0 pending when caught up
 ```
 
 **Learn:** manifest-driven pending list survives even if transcript files are deleted (you can detect inconsistency).
+
+**Answer:** Transcribe reads `transcribe_status=pending` from the manifest (paths from `config.yaml`). On success it sets `transcript_path` and `transcribe_status=done`; on failure, `transcribe_status=failed` plus `error_message`. Verified end-to-end with new memos (export → pending row → transcribe → done).
 
 ---
 
 ### Step 0a.7 — Create `run_pipeline.py`
 
-- [ ] Create `[run_pipeline.py](../run_pipeline.py)` orchestrator
-- [ ] Accept `--stage export|transcribe|all`, `--dry-run`, `--force`
-- [ ] Load config, init manifest, call export then transcribe stages
-- [ ] Print human-readable summary to stderr
-- [ ] Print **JSON summary** as last line of stdout (for future Hermes):
+- [x] Create `[run_pipeline.py](../run_pipeline.py)` orchestrator
+- [x] Accept `--stage export|transcribe|all`, `--dry-run`, `--force`
+- [x] Load config, init manifest, call export then transcribe stages
+- [x] Print human-readable summary to stderr
+- [x] Print **JSON summary** as last line of stdout (for future Hermes):
 
 ```json
 {"status":"ok","exported":0,"transcribed":0,"errors":[]}
@@ -165,11 +170,13 @@ python run_pipeline.py --stage all --dry-run
 python run_pipeline.py --stage all
 ```
 
+**Answer:** `run_pipeline.py` orchestrates export then transcribe using shared library functions and the manifest. Human-readable progress goes to stderr; the last stdout line is JSON for automation.
+
 **Phase 0a done when:**
 
-- [ ] `data/manifest.db` exists with 4 memos, all `export_status=done`
-- [ ] `python run_pipeline.py --stage all` runs cleanly (0 new work)
-- [ ] You can explain what each table column means
+- [x] `data/manifest.db` exists with memos, all `export_status=done`
+- [x] `python run_pipeline.py --stage all` runs cleanly (0 new work)
+- [x] You can explain what each table column means
 
 ---
 
