@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workout_v1",
+  "title": "Parsed workout memo v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "memo_id",
+    "recorded_at",
+    "memo_type",
+    "transcript_raw",
+    "confidence",
+    "verification_status",
+    "entities",
+    "parse_metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "v1" },
+    "memo_id": { "type": "string" },
+    "session_id": { "type": ["string", "null"] },
+    "recorded_at": { "type": ["string", "null"] },
+    "memo_type": {
+      "enum": ["set_log", "exercise_block", "session_recap", "note", "non_workout"]
+    },
+    "transcript_raw": { "type": "string" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "verification_status": {
+      "enum": ["none", "pending", "approved", "rejected"]
+    },
+    "entities": {
+      "type": "object",
+      "required": ["sets", "context_notes"],
+      "properties": {
+        "sets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["exercise_raw"],
+            "properties": {
+              "exercise_raw": { "type": ["string", "null"] },
+              "exercise_id": { "type": ["string", "null"] },
+              "exercise_display": { "type": ["string", "null"] },
+              "exercise_confidence": { "type": ["number", "null"] },
+              "weight": { "type": ["number", "null"] },
+              "weight_unit": { "type": ["string", "null"] },
+              "weight_confidence": { "type": ["number", "null"] },
+              "reps": { "type": ["integer", "null"] },
+              "reps_confidence": { "type": ["number", "null"] },
+              "notes": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "context_notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "parse_warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "parse_metadata": {
+      "type": "object",
+      "required": ["parser_backend", "parser_model", "parsed_at"],
+      "properties": {
+        "parser_backend": { "type": "string" },
+        "parser_model": { "type": "string" },
+        "parsed_at": { "type": "string" }
+      }
+    }
+  },
+  "additionalProperties": false
+}

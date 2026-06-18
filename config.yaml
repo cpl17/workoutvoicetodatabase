@@ -15,7 +15,24 @@ transcription:
   language: en              # ISO-639-1; omit or null for auto-detect
 
 parsing:
-  backend: openai          # Phase 1
+  backend: openai          # openai | local (future)
   model: gpt-4o-mini
   schema_version: v1
   confidence_threshold: 0.75
+
+sessions:
+  window_minutes: 120      # default 2 hours
+  timezone: local          # Mac local timezone
+
+units:
+  default_weight: lb
+
+verification:
+  require_for:
+    - new_exercise
+    - low_confidence_exercise
+    - low_confidence_weight
+    - low_confidence_reps
+
+non_workout:
+  action: ignore           # classify, mark skipped, no notify

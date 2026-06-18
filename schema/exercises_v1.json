@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exercises_v1",
+  "title": "Exercise catalog v1",
+  "type": "object",
+  "required": ["schema_version", "exercises"],
+  "properties": {
+    "schema_version": { "const": "v1" },
+    "exercises": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "display_name", "aliases", "status"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "display_name": { "type": "string", "minLength": 1 },
+          "aliases": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "status": { "enum": ["candidate", "active", "rejected"] },
+          "verified_at": { "type": ["string", "null"] },
+          "source": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

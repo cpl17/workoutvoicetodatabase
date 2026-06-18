@@ -38,10 +38,35 @@ class ParsingConfig:
 
 
 @dataclass(frozen=True)
+class SessionsConfig:
+    window_minutes: int
+    timezone: str
+
+
+@dataclass(frozen=True)
+class UnitsConfig:
+    default_weight: str
+
+
+@dataclass(frozen=True)
+class VerificationConfig:
+    require_for: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class NonWorkoutConfig:
+    action: str
+
+
+@dataclass(frozen=True)
 class Config:
     paths: PathsConfig
     transcription: TranscriptionConfig
     parsing: ParsingConfig
+    sessions: SessionsConfig
+    units: UnitsConfig
+    verification: VerificationConfig
+    non_workout: NonWorkoutConfig
     config_path: Path
 
 
@@ -114,6 +139,25 @@ def load_config(path: Path | str | None = None) -> Config:
     if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
         raise ValueError("config.yaml: parsing.confidence_threshold must be between 0 and 1")
 
+    sessions_raw = _require_mapping(raw, "sessions")
+    window_minutes = sessions_raw.get("window_minutes")
+    if not isinstance(window_minutes, int) or window_minutes <= 0:
+        raise ValueError("config.yaml: sessions.window_minutes must be a positive integer")
+
+    units_raw = _require_mapping(raw, "units")
+    verification_raw = _require_mapping(raw, "verification")
+    non_workout_raw = _require_mapping(raw, "non_workout")
+
+    require_for = verification_raw.get("require_for")
+    if not isinstance(require_for, list) or not require_for:
+        raise ValueError("config.yaml: verification.require_for must be a non-empty list")
+    if not all(isinstance(item, str) and item.strip() for item in require_for):
+        raise ValueError("config.yaml: verification.require_for entries must be non-empty strings")
+
+    non_workout_action = _require_str(non_workout_raw, "action")
+    if non_workout_action not in {"ignore"}:
+        raise ValueError("config.yaml: non_workout.action must be 'ignore'")
+
     return Config(
         paths=paths,
         transcription=TranscriptionConfig(
@@ -127,5 +171,12 @@ def load_config(path: Path | str | None = None) -> Config:
             schema_version=_require_str(parsing_raw, "schema_version"),
             confidence_threshold=float(confidence),
         ),
+        sessions=SessionsConfig(
+            window_minutes=window_minutes,
+            timezone=_require_str(sessions_raw, "timezone"),
+        ),
+        units=UnitsConfig(default_weight=_require_str(units_raw, "default_weight")),
+        verification=VerificationConfig(require_for=tuple(item.strip() for item in require_for)),
+        non_workout=NonWorkoutConfig(action=non_workout_action),
         config_path=config_path,
     )
