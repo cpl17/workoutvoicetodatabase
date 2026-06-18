@@ -274,15 +274,15 @@ python transcribe.py "voice-memos/2026-05-28 18.25.25 New Recording.m4a"
 
 ### Step 0b.5 — Side-by-side comparison setup
 
-- [ ] Create `transcripts-openai/` — copy current OpenAI transcripts there as baseline:
+- [x] Create `transcripts-openai/` — copy current OpenAI transcripts there as baseline:
 
 ```bash
 mkdir -p transcripts-openai
 cp transcripts/*.txt transcripts-openai/
 ```
 
-- [ ] Add `transcripts-openai/` to `[.gitignore](../.gitignore)` (optional, or keep as reference)
-- [ ] Create `[compare_transcripts.py](../compare_transcripts.py)` — for each memo, print OpenAI vs local Whisper side by side
+- [x] Add `transcripts-openai/` to `[.gitignore](../.gitignore)` (optional, or keep as reference)
+- [x] Create `[compare_transcripts.py](../compare_transcripts.py)` — for each memo, print OpenAI vs local Whisper side by side
 
 **Verify:**
 
@@ -292,26 +292,40 @@ python compare_transcripts.py
 
 **Learn:** don't assume local is better on every memo — compare on your real gym audio.
 
+**Answer:** Baseline copied (8 `.txt` files) to `transcripts-openai/` (gitignored). `compare_transcripts.py` pairs by filename stem and prints OpenAI vs current. All 8 match today because `transcripts/` still holds OpenAI output — differences will show after 0b.6 re-transcribe.
+
 ---
 
 ### Step 0b.6 — Re-transcribe all with local Whisper
 
-- [ ] Reset manifest transcribe status (or use `--force`):
+- [x] Reset manifest transcribe status (or use `--force`):
 
 ```bash
 python transcribe_voice_memos.py --force
 # or: python run_pipeline.py --stage transcribe --force
 ```
 
-- [ ] Confirm manifest rows show `transcribe_backend=faster_whisper`, `transcribe_model=small`
-- [ ] Run `compare_transcripts.py` and review all 4 memos
-- [ ] Pay special attention to `[2026-05-28 15.13.15 Save A Lot](../transcripts/2026-05-28%2015.13.15%20Save%20A%20Lot.txt)` — the hard one
+- [x] Confirm manifest rows show `transcribe_backend=faster_whisper`, `transcribe_model=small`
+- [x] Run `compare_transcripts.py` and review all memos
+- [x] Pay special attention to `[2026-05-28 15.13.15 Save A Lot](../transcripts/2026-05-28%2015.13.15%20Save%20A%20Lot.txt)` — the hard one
 
 **Questions to answer after comparing:**
 
-- [ ] Is local Whisper good enough for Phase 1 parsing?
-- [ ] Do you want to try `small.en` or `medium` before moving on?
-- [ ] Any memos where OpenAI was clearly better?
+- [x] Is local Whisper good enough for Phase 1 parsing?
+- [x] Do you want to try `small.en` or `medium` before moving on?
+- [x] Any memos where OpenAI was clearly better?
+
+**Answer (2026-06-18):** Re-transcribed 8 memos via `run_pipeline.py --stage transcribe --force`. All manifest rows: `faster_whisper` / `small`.
+
+| Memo | Verdict |
+|------|---------|
+| E Boston St 2/3/4 | Local good — sets/reps/weights captured; minor formatting (lowercase, "eight" vs "8") |
+| E Boston St (May 28) | Both usable; OpenAI slightly cleaner on weights ("2.5" vs "2.5 seconds") |
+| New Recording / I-84 E | Equivalent |
+| **Save A Lot** | **Local better** — OpenAI hallucinated YouTube outro; local got workout-like sets/reps |
+| **Iron Works Fitness** | **OpenAI better** — local returned **empty** transcript; OpenAI captured rep count |
+
+**Decisions:** `small` is good enough to proceed to Phase 1 for typical gym memos. No model upgrade yet — retry Iron Works Fitness if rep-count memos matter; consider `medium` only if that memo stays empty. `small.en` optional later for English-only speed bump.
 
 ---
 
