@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single entry point: export voice memos, then transcribe pending ones."""
+"""Single entry point: export, transcribe, parse, and group sessions."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -21,12 +22,15 @@ from export_voice_memos import (
 )
 from lib.config import load_config
 from lib.manifest import Manifest
+from lib.sessions import group_sessions
+from parse_memos import run_parse_stage
 from transcribe import transcribe, transcription_requires_openai_key
 from transcribe_voice_memos import (
     pending_memos,
     resolve_audio_path,
     transcript_path_for_audio,
 )
+from lib.parser import parsing_requires_openai_key
 
 
 @dataclass
@@ -35,7 +39,12 @@ class PipelineResult:
 
     exported: int = 0
     transcribed: int = 0
+    parsed: int = 0
+    sessions: int = 0
+    needs_review: int = 0
+    skipped_non_workout: int = 0
     errors: list[str] = field(default_factory=list)
+    review_items: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def status(self) -> str:
@@ -46,7 +55,12 @@ class PipelineResult:
             "status": self.status,
             "exported": self.exported,
             "transcribed": self.transcribed,
+            "parsed": self.parsed,
+            "sessions": self.sessions,
+            "needs_review": self.needs_review,
+            "skipped_non_workout": self.skipped_non_workout,
             "errors": self.errors,
+            "review_items": self.review_items,
         }
 
 
@@ -163,38 +177,67 @@ def run_transcribe_stage(
     return result
 
 
+def run_sessions_stage(
+    manifest: Manifest,
+    *,
+    dry_run: bool,
+) -> PipelineResult:
+    """Assign session_id values by recorded_at time window."""
+    result = PipelineResult()
+    if dry_run:
+        eligible = [
+            memo
+            for memo in manifest.list_memos(transcribe_status="done")
+            if memo.recorded_at
+        ]
+        print(f"[dry-run] Would group {len(eligible)} memo(s) into sessions", file=sys.stderr)
+        result.sessions = 0
+        return result
+
+    print("=== Sessions ===", file=sys.stderr)
+    count = group_sessions(manifest)
+    result.sessions = count
+    print(f"Grouped memos into {count} session(s)", file=sys.stderr)
+    return result
+
+
 def merge_results(*parts: PipelineResult) -> PipelineResult:
     """Combine stage results into one pipeline summary."""
     merged = PipelineResult()
     for part in parts:
         merged.exported += part.exported
         merged.transcribed += part.transcribed
+        merged.parsed += part.parsed
+        merged.sessions += part.sessions
+        merged.needs_review += part.needs_review
+        merged.skipped_non_workout += part.skipped_non_workout
         merged.errors.extend(part.errors)
+        merged.review_items.extend(part.review_items)
     return merged
 
 
 def main() -> int:
-    """CLI entry point for the export → transcribe pipeline."""
+    """CLI entry point for the full voice memo pipeline."""
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description="Run the voice memo pipeline: export from Apple library, then transcribe."
+        description="Run the voice memo pipeline: export, transcribe, parse, sessions."
     )
     parser.add_argument(
         "--stage",
-        choices=("export", "transcribe", "all"),
+        choices=("export", "transcribe", "parse", "sessions", "all"),
         default="all",
         help="Which stage(s) to run (default: all)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Report what would run without copying or transcribing",
+        help="Report what would run without copying, transcribing, or parsing",
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Re-export / re-transcribe even when already done",
+        help="Re-run stages even when already done",
     )
     parser.add_argument(
         "--limit",
@@ -208,6 +251,7 @@ def main() -> int:
     transcripts_dir = config.paths.transcripts
     voice_memos_dir.mkdir(parents=True, exist_ok=True)
     transcripts_dir.mkdir(parents=True, exist_ok=True)
+    config.paths.data.mkdir(parents=True, exist_ok=True)
 
     manifest = Manifest.from_config()
     manifest.init_db()
@@ -230,7 +274,11 @@ def main() -> int:
             return 1
 
     if args.stage in ("transcribe", "all"):
-        if not args.dry_run and transcription_requires_openai_key(config) and not os.environ.get("OPENAI_API_KEY"):
+        if (
+            not args.dry_run
+            and transcription_requires_openai_key(config)
+            and not os.environ.get("OPENAI_API_KEY")
+        ):
             result = merge_results(*stages)
             result.errors.append("OPENAI_API_KEY is not set")
             print("Error: set OPENAI_API_KEY in your environment or in a .env file.", file=sys.stderr)
@@ -249,11 +297,50 @@ def main() -> int:
                 transcribe_model=config.transcription.model,
             )
         )
+        if stages[-1].errors:
+            print(json.dumps(merge_results(*stages).to_json()), flush=True)
+            return 1
+
+    if args.stage in ("parse", "all"):
+        if (
+            not args.dry_run
+            and parsing_requires_openai_key(config)
+            and not os.environ.get("OPENAI_API_KEY")
+        ):
+            result = merge_results(*stages)
+            result.errors.append("OPENAI_API_KEY is not set")
+            print("Error: set OPENAI_API_KEY in your environment or in a .env file.", file=sys.stderr)
+            print(json.dumps(result.to_json()), flush=True)
+            return 1
+
+        print("=== Parse ===", file=sys.stderr)
+        parse_result = run_parse_stage(
+            manifest,
+            config=config,
+            force=args.force,
+            dry_run=args.dry_run,
+        )
+        stage_result = PipelineResult(
+            parsed=parse_result.parsed,
+            needs_review=parse_result.needs_review,
+            skipped_non_workout=parse_result.skipped_non_workout,
+            errors=parse_result.errors,
+            review_items=parse_result.review_items,
+        )
+        stages.append(stage_result)
+        if stage_result.errors:
+            print(json.dumps(merge_results(*stages).to_json()), flush=True)
+            return 1
+
+    if args.stage in ("sessions", "all"):
+        stages.append(run_sessions_stage(manifest, dry_run=args.dry_run))
 
     result = merge_results(*stages)
     print(
         f"Pipeline {result.status}: exported={result.exported}, "
-        f"transcribed={result.transcribed}, errors={len(result.errors)}",
+        f"transcribed={result.transcribed}, parsed={result.parsed}, "
+        f"sessions={result.sessions}, needs_review={result.needs_review}, "
+        f"errors={len(result.errors)}",
         file=sys.stderr,
     )
     print(json.dumps(result.to_json()), flush=True)
