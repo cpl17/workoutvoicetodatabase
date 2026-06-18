@@ -13,8 +13,11 @@ import re
 import shutil
 import sqlite3
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from lib.manifest import Manifest
 
 DEFAULT_OUTPUT = Path("voice-memos")
 RECORDINGS_DIR = (
@@ -120,16 +123,53 @@ def list_from_library() -> list[dict[str, object]]:
     return memos
 
 
+@dataclass(frozen=True)
+class ExportResult:
+    """Result of attempting to export one memo to voice-memos/."""
+
+    audio_path: Path | None
+    copied: bool
+
+def sync_export_to_manifest(
+    manifest: Manifest,
+    memo: dict[str, object],
+    audio_path: Path,
+) -> None:
+    """Record a successful export in the manifest, preserving existing transcribe state."""
+    apple_recording_path = str(memo["apple_recording_path"])
+    title = str(memo["title"])
+    recorded_at = memo.get("recorded_at")
+
+    existing = manifest.get_memo_by_apple_path(apple_recording_path)
+    if existing:
+        manifest.update_status(
+            existing.id,
+            export_status="done",
+            audio_path=audio_path,
+        )
+        return
+
+    manifest.upsert_memo(
+        apple_recording_path=apple_recording_path,
+        title=title,
+        recorded_at=recorded_at if isinstance(recorded_at, datetime) else None,
+        audio_path=audio_path,
+        export_status="done",
+        transcribe_status="pending",
+    )
+
+
 def export_from_library(
     memo: dict[str, object],
     output_dir: Path,
     *,
     force: bool,
-) -> Path | None:
+) -> ExportResult:
     """Copy one memo's .m4a from the Apple library folder into output_dir.
 
-    Skips if the target file already exists (unless force=True).
-    Returns the saved Path, or None if skipped/missing source.
+    Skips copying if the target file already exists (unless force=True).
+    Returns ExportResult with the on-disk path (even when skipped) and whether
+    a new copy was written.
     """
     source = memo["source"]
     assert isinstance(source, Path)
@@ -141,11 +181,11 @@ def export_from_library(
     target = output_dir / filename
     if target.exists() and not force:
         print(f"skip  {target.name}", file=sys.stderr)
-        return None
+        return ExportResult(audio_path=target, copied=False)
 
     if not source.is_file():
         print(f"warn  missing source for {title!r}: {source.name}", file=sys.stderr)
-        return None
+        return ExportResult(audio_path=None, copied=False)
 
     try:
         source.read_bytes()[:1]
@@ -161,7 +201,7 @@ def export_from_library(
         os.utime(target, (ts, ts))
 
     print(f"saved {target.name}", file=sys.stderr)
-    return target
+    return ExportResult(audio_path=target, copied=True)
 
 
 def main() -> int:
@@ -191,6 +231,11 @@ def main() -> int:
         action="store_true",
         help="List memos and exit",
     )
+    parser.add_argument(
+        "--no-manifest",
+        action="store_true",
+        help="Do not read or write data/manifest.db",
+    )
     args = parser.parse_args()
 
     output_dir = args.output.expanduser().resolve()
@@ -214,10 +259,19 @@ def main() -> int:
 
     to_export = memos[: args.limit] if args.limit else memos
     print(f"Exporting {len(to_export)} memo(s) to {output_dir}...", file=sys.stderr)
+
+    manifest: Manifest | None = None
+    if not args.no_manifest:
+        manifest = Manifest.from_config()
+        manifest.init_db()
+
     exported = 0
     for memo in to_export:
         try:
-            if export_from_library(memo, output_dir, force=args.force):
+            result = export_from_library(memo, output_dir, force=args.force)
+            if result.audio_path and manifest is not None:
+                sync_export_to_manifest(manifest, memo, result.audio_path)
+            if result.copied:
                 exported += 1
         except RuntimeError as exc:
             print(f"Error exporting {memo['title']!r}: {exc}", file=sys.stderr)
