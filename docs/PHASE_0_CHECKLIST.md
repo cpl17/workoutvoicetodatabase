@@ -184,20 +184,28 @@ python run_pipeline.py --stage all
 
 ### Step 0b.1 — Understand the transcription swap
 
-- [ ] Read current `[transcribe.py](../transcribe.py)` — note it calls OpenAI `whisper-1` API
-- [ ] Read OpenAI transcripts in `transcripts/` — these become your **baseline** for comparison
+- [x] Read current `[transcribe.py](../transcribe.py)` — note it calls OpenAI `whisper-1` API
+- [x] Read OpenAI transcripts in `transcripts/` — these become your **baseline** for comparison
 
 **Why:** Phase 0b replaces cloud transcription with local `faster-whisper`. OpenAI transcripts stay on disk as reference (don't delete yet).
 
 **Question to consider:** local Whisper sends no audio to the cloud, but parsing (Phase 1) still will. Cool with that split?
 
+**Answer (2026-06-18):**
+
+**Current call chain:** `run_pipeline.py` / `transcribe_voice_memos.py` → `transcribe.transcribe()` → OpenAI `client.audio.transcriptions.create(model="whisper-1")`. Requires `OPENAI_API_KEY`; uploads the full `.m4a` on every call. Language comes from CLI or `config.yaml` (`transcription.language`).
+
+**Baseline transcripts (8 memos, all OpenAI):** gym-style memos (`E Boston St`, squats/bench with sets×reps×weight) transcribe well; `Iron Works Fitness` is a long rep count; `Save A Lot` is noisy/wrong (likely background audio — the hard comparison case); `I-84 E` and `New Recording` are non-workout tests.
+
+**Cloud vs local split:** transcription moves local in 0b; Phase 1 parsing still sends *text* (not audio) to an LLM. Audio stays on disk; only derived transcript text goes to the cloud for structured extraction.
+
 ---
 
 ### Step 0b.2 — Install faster-whisper
 
-- [ ] Add `faster-whisper` to `[requirements.txt](../requirements.txt)`
-- [ ] Install: `pip install faster-whisper`
-- [ ] First run downloads the `small` model (~500MB) — expect a wait
+- [x] Add `faster-whisper` to `[requirements.txt](../requirements.txt)`
+- [x] Install: `pip install faster-whisper`
+- [x] First run downloads the `small` model (~500MB) — expect a wait (happened in 0b.3 verify)
 
 **Verify:**
 
@@ -207,19 +215,21 @@ python -c "from faster_whisper import WhisperModel; print('import ok')"
 
 **Learn:** `small` is fast but less accurate; you'll upgrade later. Model name goes in config + manifest.
 
+**Answer:** Installed `faster-whisper` 1.2.1 in `.venv` (pulls in `ctranslate2`, `onnxruntime`, etc.). Import verified; model download deferred until first local transcribe in 0b.3.
+
 ---
 
 ### Step 0b.3 — Create Whisper backend abstraction
 
-- [ ] Create `lib/whisper/__init__.py` and `[lib/whisper/backends.py](../lib/whisper/backends.py)`
-- [ ] Define a simple interface:
+- [x] Create `lib/whisper/__init__.py` and `[lib/whisper/backends.py](../lib/whisper/backends.py)`
+- [x] Define a simple interface:
 
 ```python
 def transcribe(audio_path: Path, *, language: str | None = None) -> str: ...
 ```
 
-- [ ] Implement `FasterWhisperBackend` — loads model from `config.yaml` once, reuses across files
-- [ ] Implement `OpenAIBackend` — wrap existing OpenAI logic (keep for comparison)
+- [x] Implement `FasterWhisperBackend` — loads model from `config.yaml` once, reuses across files
+- [x] Implement `OpenAIBackend` — wrap existing OpenAI logic (keep for comparison)
 
 **Verify:**
 
@@ -233,6 +243,8 @@ print(b.transcribe(Path('voice-memos/2026-05-28 18.25.25 New Recording.m4a')))
 ```
 
 **Learn:** backend abstraction lets you A/B test without changing `transcribe_voice_memos.py` logic.
+
+**Answer:** `TranscriptionBackend` protocol plus `OpenAIBackend` and `FasterWhisperBackend`. Local backend loads `WhisperModel` once in `__init__` and reuses it. Verify on "New Recording" matched OpenAI baseline ("Testing, testing…").
 
 ---
 
