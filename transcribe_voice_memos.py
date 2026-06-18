@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 from lib.config import REPO_ROOT, load_config
 from lib.manifest import Manifest, MemoRecord
-from transcribe import transcribe
+from transcribe import transcribe, transcription_requires_openai_key
 
 
 def resolve_audio_path(memo: MemoRecord) -> Path | None:
@@ -98,11 +98,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not os.environ.get("OPENAI_API_KEY"):
+    config = load_config()
+
+    if not args.dry_run and transcription_requires_openai_key(config) and not os.environ.get("OPENAI_API_KEY"):
         print("Error: set OPENAI_API_KEY in your environment or in a .env file.", file=sys.stderr)
         return 1
 
-    config = load_config()
     input_dir = (args.input or config.paths.voice_memos).expanduser().resolve()
     output_dir = (args.output or config.paths.transcripts).expanduser().resolve()
 
@@ -156,6 +157,8 @@ def main() -> int:
             memo.id,
             transcribe_status="done",
             transcript_path=target,
+            transcribe_backend=config.transcription.backend,
+            transcribe_model=config.transcription.model,
             clear_error=True,
         )
         print(f"Wrote {target.name}", file=sys.stderr)

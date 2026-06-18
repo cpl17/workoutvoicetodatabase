@@ -84,6 +84,8 @@ class MemoRecord:
     export_status: str
     transcribe_status: str
     error_message: str | None
+    transcribe_backend: str | None
+    transcribe_model: str | None
     created_at: str
     updated_at: str
 
@@ -100,6 +102,8 @@ class MemoRecord:
             export_status=row["export_status"],
             transcribe_status=row["transcribe_status"],
             error_message=row["error_message"] if "error_message" in keys else None,
+            transcribe_backend=row["transcribe_backend"] if "transcribe_backend" in keys else None,
+            transcribe_model=row["transcribe_model"] if "transcribe_model" in keys else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -134,6 +138,10 @@ class Manifest:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(memos)")}
             if "error_message" not in columns:
                 conn.execute("ALTER TABLE memos ADD COLUMN error_message TEXT")
+            if "transcribe_backend" not in columns:
+                conn.execute("ALTER TABLE memos ADD COLUMN transcribe_backend TEXT")
+            if "transcribe_model" not in columns:
+                conn.execute("ALTER TABLE memos ADD COLUMN transcribe_model TEXT")
             conn.commit()
 
     def upsert_memo(
@@ -270,6 +278,8 @@ class Manifest:
         audio_path: Path | str | None = None,
         transcript_path: Path | str | None = None,
         error_message: str | None = None,
+        transcribe_backend: str | None = None,
+        transcribe_model: str | None = None,
         clear_error: bool = False,
     ) -> MemoRecord | None:
         """Update pipeline status and/or paths for a memo by id."""
@@ -279,6 +289,8 @@ class Manifest:
             and audio_path is None
             and transcript_path is None
             and error_message is None
+            and transcribe_backend is None
+            and transcribe_model is None
             and not clear_error
         ):
             raise ValueError("update_status requires at least one field to change")
@@ -304,6 +316,12 @@ class Manifest:
         elif clear_error:
             fields.append("error_message = ?")
             params.append(None)
+        if transcribe_backend is not None:
+            fields.append("transcribe_backend = ?")
+            params.append(transcribe_backend)
+        if transcribe_model is not None:
+            fields.append("transcribe_model = ?")
+            params.append(transcribe_model)
 
         fields.append("updated_at = ?")
         params.append(_utc_now_iso())

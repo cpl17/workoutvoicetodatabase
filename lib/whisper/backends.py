@@ -7,6 +7,8 @@ from typing import Protocol, runtime_checkable
 
 from openai import OpenAI
 
+from lib.config import TranscriptionConfig
+
 
 @runtime_checkable
 class TranscriptionBackend(Protocol):
@@ -50,3 +52,12 @@ class FasterWhisperBackend:
             kwargs["language"] = lang
         segments, _info = self._model.transcribe(str(audio_path), **kwargs)
         return "".join(segment.text for segment in segments).strip()
+
+
+def create_transcription_backend(transcription: TranscriptionConfig) -> TranscriptionBackend:
+    """Build a transcription backend from config."""
+    if transcription.backend == "openai":
+        return OpenAIBackend(model=transcription.model, language=transcription.language)
+    if transcription.backend == "faster_whisper":
+        return FasterWhisperBackend(model=transcription.model, language=transcription.language)
+    raise ValueError(f"Unknown transcription backend: {transcription.backend!r}")

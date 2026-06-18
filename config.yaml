@@ -7,9 +7,9 @@ paths:
   data: data
 
 transcription:
-  backend: openai          # openai (current) | faster_whisper (Phase 0b)
-  model: whisper-1         # openai: whisper-1 | faster_whisper: small, medium, etc.
-  language: en             # ISO-639-1; omit or null for auto-detect
+  backend: faster_whisper   # faster_whisper | openai
+  model: small              # openai: whisper-1 | faster_whisper: small, medium, etc.
+  language: en              # ISO-639-1; omit or null for auto-detect
 
 parsing:
   backend: openai          # Phase 1

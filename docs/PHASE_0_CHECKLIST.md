@@ -250,7 +250,7 @@ print(b.transcribe(Path('voice-memos/2026-05-28 18.25.25 New Recording.m4a')))
 
 ### Step 0b.4 — Update config for transcription backend
 
-- [ ] Fill in `config.yaml` transcription section:
+- [x] Fill in `config.yaml` transcription section:
 
 ```yaml
 transcription:
@@ -259,14 +259,16 @@ transcription:
   language: en
 ```
 
-- [ ] Update `[transcribe.py](../transcribe.py)` to delegate to configured backend
-- [ ] Store `transcribe_backend` + `transcribe_model` on manifest row when transcribing
+- [x] Update `[transcribe.py](../transcribe.py)` to delegate to configured backend
+- [x] Store `transcribe_backend` + `transcribe_model` on manifest row when transcribing
 
 **Verify:**
 
 ```bash
 python transcribe.py "voice-memos/2026-05-28 18.25.25 New Recording.m4a"
 ```
+
+**Answer:** Default backend is `faster_whisper`/`small`. `transcribe.py` caches the backend from config; OpenAI API key required only when `backend: openai`. Manifest rows get `transcribe_backend` and `transcribe_model` on successful transcribe (batch + pipeline).
 
 ---
 

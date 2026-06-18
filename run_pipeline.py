@@ -21,7 +21,7 @@ from export_voice_memos import (
 )
 from lib.config import load_config
 from lib.manifest import Manifest
-from transcribe import transcribe
+from transcribe import transcribe, transcription_requires_openai_key
 from transcribe_voice_memos import (
     pending_memos,
     resolve_audio_path,
@@ -109,6 +109,8 @@ def run_transcribe_stage(
     force: bool,
     dry_run: bool,
     language: str | None,
+    transcribe_backend: str,
+    transcribe_model: str,
 ) -> PipelineResult:
     """Transcribe manifest rows with transcribe_status=pending."""
     result = PipelineResult()
@@ -150,6 +152,8 @@ def run_transcribe_stage(
             memo.id,
             transcribe_status="done",
             transcript_path=target,
+            transcribe_backend=transcribe_backend,
+            transcribe_model=transcribe_model,
             clear_error=True,
         )
         print(f"Wrote {target.name}", file=sys.stderr)
@@ -226,7 +230,7 @@ def main() -> int:
             return 1
 
     if args.stage in ("transcribe", "all"):
-        if not args.dry_run and not os.environ.get("OPENAI_API_KEY"):
+        if not args.dry_run and transcription_requires_openai_key(config) and not os.environ.get("OPENAI_API_KEY"):
             result = merge_results(*stages)
             result.errors.append("OPENAI_API_KEY is not set")
             print("Error: set OPENAI_API_KEY in your environment or in a .env file.", file=sys.stderr)
@@ -241,6 +245,8 @@ def main() -> int:
                 force=args.force,
                 dry_run=args.dry_run,
                 language=config.transcription.language,
+                transcribe_backend=config.transcription.backend,
+                transcribe_model=config.transcription.model,
             )
         )
 
