@@ -24,13 +24,27 @@ Ask questions anytime — that's the point.
 
 **Question to consider:** what happens if you rename a file, re-export with `--force`, or transcribe twice?
 
+**Answer (2026-06-18 — pre-manifest behavior):**
+
+Audio and transcripts are linked only by **matching filenames** (`foo.m4a` ↔ `foo.txt`). Nothing tracks stable identity yet.
+
+| Action | Export | Transcribe | Risk |
+|--------|--------|------------|------|
+| Rename audio in `voice-memos/` | Next export uses Apple's DB name, ignores your rename | Looks for `transcripts/{new-stem}.txt`; old `.txt` orphaned | Duplicates, wasted API |
+| Rename transcript in `transcripts/` | — | Audio stem no longer matches → re-transcribes | Wasted API |
+| Re-export with `--force` | Overwrites file if canonical name exists; writes fresh copy if you had renamed | — | Duplicate audio if you renamed exports |
+| Transcribe twice (no `--force`) | — | Skipped if `.txt` exists | Safe |
+| Transcribe twice (`--force`) | — | Overwrites `.txt`, calls API again | Cost |
+
+**Why the manifest fixes this (Phase 0a+):** key memos by `apple_recording_path` (ZPATH), not filename. Re-export updates `audio_path` on the same row; transcribe checks `transcribe_status` instead of "does `.txt` exist?"; orphans become detectable.
+
 ---
 
 ### Step 0a.2 — Add project config
 
-- [ ] Create [`config.yaml`](../config.yaml) with paths and placeholders (transcription/parsing sections can be stubs for now)
-- [ ] Add `pyyaml` to [`requirements.txt`](../requirements.txt) and install: `pip install pyyaml`
-- [ ] Create `lib/` package: `lib/__init__.py` + `lib/config.py` that loads and validates config
+- [x] Create [`config.yaml`](../config.yaml) with paths and placeholders (transcription/parsing sections can be stubs for now)
+- [x] Add `pyyaml` to [`requirements.txt`](../requirements.txt) and install: `pip install pyyaml`
+- [x] Create `lib/` package: `lib/__init__.py` + `lib/config.py` that loads and validates config
 
 **Verify:**
 ```bash
@@ -38,6 +52,8 @@ python -c "from lib.config import load_config; print(load_config())"
 ```
 
 **Learn:** why externalize paths/settings instead of hardcoding `Path("voice-memos")` everywhere?
+
+**Answer:** One file (`config.yaml`) holds paths and future settings (Whisper backend, parse model). Scripts call `load_config()` instead of scattering defaults — change once, applies everywhere. Validation at load time catches typos early instead of failing mid-pipeline.
 
 ---
 

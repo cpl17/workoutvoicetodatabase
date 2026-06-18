@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Transcribe new audio files from voice-memos/ using OpenAI Whisper."""
+"""Batch-transcribe audio files from voice-memos/ to transcripts/.
+
+Scans the input folder for supported audio formats, skips memos that already
+have a matching .txt transcript (unless --force), and calls transcribe.py per file.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ DEFAULT_OUTPUT = Path("transcripts")
 
 
 def find_audio_files(input_dir: Path) -> list[Path]:
+    """Return supported audio files in input_dir, oldest-first by modification time."""
     files = [
         path
         for path in input_dir.iterdir()
@@ -26,6 +31,7 @@ def find_audio_files(input_dir: Path) -> list[Path]:
 
 
 def transcript_path(audio_path: Path, output_dir: Path) -> Path:
+    """Map voice-memos/foo.m4a → transcripts/foo.txt (same stem, .txt extension)."""
     return output_dir / f"{audio_path.stem}.txt"
 
 
@@ -35,6 +41,11 @@ def pending_transcriptions(
     *,
     force: bool,
 ) -> list[Path]:
+    """Return audio files that still need transcription.
+
+    A file is pending if its transcript .txt is missing, or if force=True.
+    This is the current state-tracking approach; Phase 0a replaces it with a manifest.
+    """
     pending: list[Path] = []
     for audio_path in find_audio_files(input_dir):
         target = transcript_path(audio_path, output_dir)
@@ -44,6 +55,7 @@ def pending_transcriptions(
 
 
 def main() -> int:
+    """CLI entry point: transcribe pending voice memos, or list them with --dry-run."""
     load_dotenv()
 
     parser = argparse.ArgumentParser(

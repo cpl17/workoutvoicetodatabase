@@ -1,0 +1,18 @@
+# Workout Voice Memo Tracker — project configuration
+# Paths are relative to the repo root (directory containing this file).
+
+paths:
+  voice_memos: voice-memos
+  transcripts: transcripts
+  data: data
+
+transcription:
+  backend: openai          # openai (current) | faster_whisper (Phase 0b)
+  model: whisper-1         # openai: whisper-1 | faster_whisper: small, medium, etc.
+  language: en             # ISO-639-1; omit or null for auto-detect
+
+parsing:
+  backend: openai          # Phase 1
+  model: gpt-4o-mini
+  schema_version: v1
+  confidence_threshold: 0.75
